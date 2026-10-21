@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Simple JSX Previewer</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.development.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.development.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+<style>
+  :root{
+    --bar-h: 44px;
+    --bg: #1e1e1e;
+    --bar-bg: #252526;
+    --border: #3a3a3a;
+    --text: #d4d4d4;
+    --text-dim: #8a8a8a;
+    --accent: #4fa3ff;
+    --error: #ff6b6b;
+  }
+  @media (prefers-color-scheme: light){
+    :root:not([data-theme="dark"]){
+      --bg: #ffffff;
+      --bar-bg: #f3f3f3;
+      --border: #ddd;
+      --text: #1e1e1e;
+      --text-dim: #767676;
+    }
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;margin:0;}
+  body{
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  #bar{
+    height: var(--bar-h);
+    padding-top: env(safe-area-inset-top, 0px);
+    display:flex;
+    align-items:center;
+    gap:10px;
+    padding-left:12px;
+    padding-right:12px;
+    background: var(--bar-bg);
+    border-bottom: 1px solid var(--border);
+    font-size: 13px;
+  }
+  #bar button{
+    background:transparent;
+    color:var(--text);
+    border:1px solid var(--border);
+    border-radius:5px;
+    padding:5px 10px;
+    font-size:12px;
+    cursor:pointer;
+  }
+  #bar button:hover{ border-color: var(--accent); color: var(--accent); }
+  #filename{ color:var(--text-dim); flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  #status{ font-size:12px; }
+  #status.ok{ color:#4fbf6b; }
+  #status.err{ color:var(--error); }
+  #main{
+    position: relative;
+    height: calc(100vh - var(--bar-h) - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+    overflow:auto;
+  }
+  #drop{
+    position:absolute; inset:0;
+    display:flex; align-items:center; justify-content:center;
+    flex-direction:column; gap:8px;
+    color:var(--text-dim);
+    border: 2px dashed var(--border);
+    margin:14px;
+    border-radius:10px;
+    text-align:center;
+    padding:20px;
+  }
+  #drop.dragover{ border-color: var(--accent); color: var(--accent); }
+  #drop .hint{ font-size:12px; }
+  #main{ transform: translateZ(0); } /* makes position:fixed modals/toolbars stay inside the stage */
+  #root{ height:100%; padding:0; }
+  #root .h-screen{ height:100% !important; } /* h-screen = 100vh would overflow the stage below the toolbar */
+  #err{
+    margin:14px; padding:12px 14px; border-radius:8px;
+    background: rgba(255,107,107,0.1); border:1px solid var(--error);
+    color: var(--error); font-family: ui-monospace, Consolas, monospace;
+    font-size:12px; white-space:pre-wrap; display:none;
+  }
+</style>
+</head>
+<body>
+  <div id="bar">
+    <button id="loadBtn">Load JSX</button>
+    <input id="fileInput" type="file" accept=".jsx,.js" style="display:none">
+    <span id="filename">No file loaded</span>
+    <span id="status"></span>
+  </div>
+  <div id="main">
+    <div id="drop">
+      <div>Drag and drop a .jsx file here</div>
+      <div class="hint">or use "Load JSX" above — default export renders below</div>
+    </div>
+    <div id="err"></div>
+    <div id="root"></div>
+  </div>
+
+<script>
+  const dropEl = document.getElementById('drop');
+  const rootEl = document.getElementById('root');
+  const errEl = document.getElementById('err');
+  const statusEl = document.getElementById('status');
+  const filenameEl = document.getElementById('filename');
+  const fileInput = document.getElementById('fileInput');
+  let reactRoot = null;
+
+  function setStatus(msg, cls){
+    statusEl.textContent = msg;
+    statusEl.className = cls || '';
+  }
+
+  function showError(msg){
+    errEl.style.display = 'block';
+    errEl.textContent = msg;
+    setStatus('Error', 'err');
+  }
+
+  function clearError(){
+    errEl.style.display = 'none';
+    errEl.textContent = '';
+  }
+
+  function renderCode(code, name){
+    clearError();
+    try {
+      const transformed = Babel.transform(code, {
+        presets: ['react'],
+        plugins: ['transform-modules-commonjs']
+      }).code;
+      // Provide React hooks/globals in scope for the transformed code.
+      const module = { exports: {} };
+      const shimRequire = (name) => {
+        if (name === 'react') return React;
+        if (name === 'react-dom' || name === 'react-dom/client') return ReactDOM;
+        throw new Error(`Cannot resolve import "${name}" — only "react" and "react-dom" are available in this preview (no bundler).`);
+      };
+      const wrapped = new Function('React', 'module', 'exports', 'require', `
+        const { ${Object.keys(React).join(', ')} } = React;
+        ${transformed}
+        return module.exports;
+      `);
+      const exported = wrapped(React, module, module.exports, shimRequire);
+      const Component = (exported && (exported.default || exported)) ;
+      if (typeof Component !== 'function') {
+        throw new Error('No default-exported component function found. Make sure the file has "export default function ..." or "export default ComponentName".');
+      }
+      if (!reactRoot) reactRoot = ReactDOM.createRoot(rootEl);
+      reactRoot.render(React.createElement(Component));
+      setStatus('Rendered', 'ok');
+      filenameEl.textContent = name || 'pasted code';
+      dropEl.style.display = 'none';
+    } catch (e) {
+      showError(e.message);
+    }
+  }
+
+  function loadFile(file){
+    const reader = new FileReader();
+    reader.onload = () => renderCode(reader.result, file.name);
+    reader.onerror = () => showError('Could not read file.');
+    reader.readAsText(file);
+  }
+
+  document.getElementById('loadBtn').addEventListener('click', () => fileInput.click());
+  fileInput.addEventListener('change', (e) => {
+    if (e.target.files[0]) loadFile(e.target.files[0]);
+  });
+
+  ['dragenter','dragover'].forEach(evt =>
+    dropEl.addEventListener(evt, (e) => { e.preventDefault(); dropEl.classList.add('dragover'); })
+  );
+  ['dragleave','drop'].forEach(evt =>
+    dropEl.addEventListener(evt, (e) => { e.preventDefault(); dropEl.classList.remove('dragover'); })
+  );
+  document.getElementById('main').addEventListener('dragover', (e) => e.preventDefault());
+  document.getElementById('main').addEventListener('drop', (e) => {
+    e.preventDefault();
+    const file = e.dataTransfer.files[0];
+    if (file) loadFile(file);
+  });
+</script>
+</body>
+</html>
