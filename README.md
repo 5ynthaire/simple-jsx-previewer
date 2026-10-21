@@ -6,7 +6,7 @@ HTML based .jsx preview tool.
 
 [simple-jsx-previewer.html](simple-jsx-previewer.html)
 
-[github.io]()
+Live link: [5ynthaire.github.io/simple-jsx-previewer](https://5ynthaire.github.io/simple-jsx-previewer)
 
 ## Use
 
