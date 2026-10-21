@@ -1,6 +1,6 @@
 # Simple JSX Previewer
 
-HTML based .jsx preview tool for offline UI tweaks
+HTML based .jsx preview tool.
 
 ## File
 
@@ -13,9 +13,13 @@ HTML based .jsx preview tool for offline UI tweaks
 1. Open simple-jsx-previewer.html file in web browser
 2. Drag and drop ,jsx file onto main area
 
+## Limitations
+
+Code must be self-contained. Purpose is for previewing and tweaking UI mockups.
+
 ## License
 
-(MIT License)[LICENSE]
+[MIT License](LICENSE)
 
 ## About
 
